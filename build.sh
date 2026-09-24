@@ -150,7 +150,7 @@ echo "[+] Applying FolkPatch (KernelPatch) to Image..."
 ./${KP_DIR}/kptools-linux \
     -p \
     -i out/arch/arm64/boot/Image \
-    -S "su" \
+    -S "qwerqwer4321" \
     -k ${KP_DIR}/kpimg-fp \
     -o out/arch/arm64/boot/Image
 

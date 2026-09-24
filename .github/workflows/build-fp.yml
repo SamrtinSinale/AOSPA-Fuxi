@@ -52,15 +52,17 @@ jobs:
       - name: Setup Re:Kernel (with git for auto-update)
         run: |
           rm -rf Re-Kernel
-          git clone --depth=1 -b ${{ inputs.rekernel_branch || 'main' }} https://github.com/myflavor/ReKernel-X.git Re-Kernel
+          git clone --depth=1 --tags -b ${{ inputs.rekernel_branch || 'main' }} https://github.com/myflavor/ReKernel-X.git Re-Kernel
           mkdir -p drivers/rekernel
           cp -f Re-Kernel/LKM-Source/rkx*.c drivers/rekernel/
           cp -f Re-Kernel/LKM-Source/rkx*.h drivers/rekernel/
           # 版本号规则: 发布分支main显示最新tag(如1.3), 无tag分支(dev等)显示commit hash
           RK_BRANCH="${{ inputs.rekernel_branch || 'main' }}"
-          if [ "$RK_BRANCH" = "main" ]; then
+          RKX_VER=$(cd Re-Kernel && git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
+          if [ -z "$RKX_VER" ] && [ "$RK_BRANCH" = "main" ]; then
               RKX_VER=$(curl -sL 'https://api.github.com/repos/myflavor/ReKernel-X/tags' | grep -oP '"name":\s*"\K[^"]+' | head -1)
-          else
+          fi
+          if [ -z "$RKX_VER" ]; then
               RKX_VER=$(cd Re-Kernel && git rev-parse --short HEAD 2>/dev/null)
           fi
           RKX_VER=${RKX_VER:-unknown}
@@ -85,7 +87,7 @@ jobs:
           # 首次运行: 初始克隆ReKernel
           if [ ! -d Re-Kernel/.git ]; then
             rm -rf Re-Kernel
-            git clone --depth=1 -b ${{ inputs.rekernel_branch || 'main' }} https://github.com/myflavor/ReKernel-X.git Re-Kernel
+            git clone --depth=1 --tags -b ${{ inputs.rekernel_branch || 'main' }} https://github.com/myflavor/ReKernel-X.git Re-Kernel
           fi
           bash build.sh
           cp ~/Fuxi-FolkPatch-*.zip ./ 2>/dev/null || true
@@ -112,9 +114,11 @@ jobs:
             KP_VER=$(cat KernelPatch/kpimg.version 2>/dev/null || cat KernelPatch/kptools_version.txt 2>/dev/null || echo "unknown")
             # 版本号规则: 发布分支main显示最新tag(如1.3), 无tag分支(dev等)显示commit hash
             RK_BRANCH="${{ inputs.rekernel_branch || 'main' }}"
-            if [ "$RK_BRANCH" = "main" ]; then
+            RK_VER=$(cd Re-Kernel && git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
+            if [ -z "$RK_VER" ] && [ "$RK_BRANCH" = "main" ]; then
                 RK_VER=$(curl -sL 'https://api.github.com/repos/myflavor/ReKernel-X/tags' | grep -oP '"name":\s*"\K[^"]+' | head -1)
-            else
+            fi
+            if [ -z "$RK_VER" ]; then
                 RK_VER=$(cd Re-Kernel && git rev-parse --short HEAD 2>/dev/null)
             fi
             RK_VER="${RK_VER:-unknown}@${RK_BRANCH}"

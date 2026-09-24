@@ -25,7 +25,7 @@ fi
 RKX_DIR="drivers/rekernel"
 if [ -f "$RKX_DIR/rkx_binder_kp.c" ]; then
     echo "[+] Patching rkx_binder_kp.c: 去掉版本分支, 只保留 kallsyms 查真符号"
-    perl -0777 -i -pe 's/#if LINUX_VERSION_CODE < KERNEL_VERSION\(6, 0, 0\)\n\s*re_binder_alloc_copy_from_buffer = rkx_binder_copy_from_buffer;\n#else\n(\s*re_binder_alloc_copy_from_buffer = \(void \*\)re_kallsyms_lookup_name\("binder_alloc_copy_from_buffer"\);\n)#endif\n/$1/s' "$RKX_DIR/rkx_binder_kp.c"
+    perl -0777 -i -pe 's/#if LINUX_VERSION_CODE < KERNEL_VERSION\(6, 0, 0\)\n\s*k_binder_alloc_copy_from_buffer = rk_binder_alloc_copy_from_buffer;\n#else\n(\s*k_binder_alloc_copy_from_buffer = \(void \*\)k_kallsyms_lookup_name\("binder_alloc_copy_from_buffer"\);\n)#endif\n/$1/s' "$RKX_DIR/rkx_binder_kp.c"
 fi
 if [ -f "$RKX_DIR/rkx_binder_alloc.c" ]; then
     echo "[+] Overwriting rkx_binder_alloc.c: 直接转调内核真符号 binder_alloc_copy_from_buffer"

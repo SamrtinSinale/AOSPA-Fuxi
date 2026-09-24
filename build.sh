@@ -109,6 +109,67 @@ else
     rm -rf "${KP_DIR}/assets"
     rm -f /tmp/fp.apk
     echo "${FP_LATEST}" > "${FP_VERSION_FILE}"
+
+    # ---- 重编译修补版 kpimg: 去掉 0.13.5+ 引入的 "仅信任纯 v2 签名" 限制 ----
+    # 上游 0.13.5 起要求管理器 APK 必须是纯 v2 签名, 但官方 FolkPatch APK 是
+    # v1+v2+v3 多重签名, 必然被拒 -> App 无法通过 trusted-manager 校验 -> 未激活.
+    # 此处重新编译 kpimg, 注释掉 v1/v3 拒绝逻辑(证书摘要校验仍然保留).
+    if [ "${REBUILD_KPIMG:-1}" = "1" ]; then
+        echo "[+] Rebuilding patched kpimg (allow multi-signature manager APK)..."
+        KPIMG_VER=$(cat "${KP_DIR}/kpimg.version" 2>/dev/null || echo "")
+        if [ -z "${KPIMG_VER}" ]; then
+            KPIMG_VER=$(echo "${FP_LATEST:-kp0.13.8}" | sed 's/^kp//')
+        fi
+        echo "[-] KernelPatch source version: ${KPIMG_VER}"
+        rm -rf /tmp/kp-src
+        curl -sL "https://github.com/bmax121/KernelPatch/archive/refs/tags/${KPIMG_VER}.tar.gz" -o /tmp/kp-src.tgz
+        mkdir -p /tmp/kp-src && tar xzf /tmp/kp-src.tgz -C /tmp/kp-src --strip-components=1
+        KPC_SRC=/tmp/kp-src
+        if [ -f "${KPC_SRC}/kernel/patch/android/userd.c" ]; then
+            python3 - "$KPC_SRC/kernel/patch/android/userd.c" <<'PYEOF'
+import io,sys
+p=sys.argv[1]
+s=io.open(p,encoding='utf-8',errors='replace').read()
+old="""    if (apk_has_v1_signature(fp, (loff_t)cd_offset, eocd_offset)) {
+        log_boot("trusted manager apk unexpected v1 (JAR) signature scheme\\n");
+        goto out;
+    }
+
+    if (v3_blocks || v31_blocks) {
+        log_boot("trusted manager apk unexpected v3/v3.1 signature scheme alongside v2\\n");
+        goto out;
+    }
+"""
+new="""    // PATCHED: upstream forces a lone-v2 signature, which the official
+    // FolkPatch APK (v1+v2+v3) can never satisfy. The trusted digest check
+    // below still authenticates the manager certificate.
+    (void)v3_blocks;
+    (void)v31_blocks;
+"""
+if old not in s:
+    sys.stderr.write("patched block not found\n"); sys.exit(1)
+io.open(p,'w',encoding='utf-8').write(s.replace(old,new,1))
+print("kpimg source patched")
+PYEOF
+            # 工具链
+            TL_DIR=/tmp/kp-toolchain
+            if [ ! -x "${TL_DIR}/bin/aarch64-none-elf-gcc" ]; then
+                rm -rf /tmp/tl.tar.xz "${TL_DIR}"
+                curl -sL "https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-elf.tar.xz" -o /tmp/tl.tar.xz
+                mkdir -p "${TL_DIR}"
+                tar -Jxf /tmp/tl.tar.xz -C "${TL_DIR}" --strip-components=1
+            fi
+            export TARGET_COMPILE="${TL_DIR}/bin/aarch64-none-elf-"
+            ( cd "${KPC_SRC}/kernel" && export ANDROID=1 && make clean >/dev/null 2>&1; make hdr kpimg ) \
+                && cp -f "${KPC_SRC}/kernel/kpimg" "${KP_DIR}/kpimg-fp" \
+                && echo "[-] Patched kpimg installed (multi-signature allowed)" \
+                || echo "[!] kpimg rebuild failed, keeping upstream kpimg"
+        else
+            echo "[!] KernelPatch source layout unexpected, keeping upstream kpimg"
+        fi
+        rm -rf "${KPC_SRC}" /tmp/kp-src.tgz
+    fi
+
     # 从 APK 文件名提取真实 versionCode (如 FolkPatch_115003_5.0_on_main-release.apk -> 115003),
     # 与 release 实际版本保持一致, 避免读 FolkPatch main 分支提前 bump 的版本号
     FP_CODE=$(basename "${FP_DL_URL}" | grep -oP '(?<=FolkPatch_)\d+')
